@@ -42,6 +42,7 @@ pub enum Action {
   LoadMenu,
   CopyData(String),
   RequestExportData(i64),
+  YankData,
   ExportData(ExportFormat),
   ExportDataFinished,
   RequestSaveFavorite(Vec<String>),
