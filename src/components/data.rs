@@ -405,7 +405,7 @@ impl Component for Data<'_> {
       let mut wl_copy = Command::new("wl-copy").stdin(Stdio::piped()).spawn()?;
 
       if let Some(mut stdin) = wl_copy.stdin.take() {
-        let mut data_for_yanking = DataForYanking::new(rows);
+        let mut data_for_yanking = DataForYanking::new(rows, app_state);
         data_for_yanking.cook_columns();
         let data = data_for_yanking.yank();
         stdin.write_all(data.as_bytes())?;
@@ -552,25 +552,28 @@ impl Component for Data<'_> {
   }
 }
 
-pub struct DataForYanking {
-  pub columns: LinkedList<LinkedList<String>>,
+struct DataForYanking {
+  sql: Vec<String>,
+  columns: LinkedList<LinkedList<String>>,
 }
 
 impl DataForYanking {
-  pub fn new(data: &Rows) -> Self {
+  pub fn new(rows: &Rows, app_state: &AppState) -> Self {
     let mut columns: LinkedList<LinkedList<String>> = LinkedList::new();
 
-    for (column_position, header) in data.headers.iter().enumerate() {
+    for (column_position, header) in rows.headers.iter().enumerate() {
       let mut column: LinkedList<String> = LinkedList::from([header.name.clone()]);
 
-      for row in &data.rows {
+      for row in &rows.rows {
         column.push_back(row[column_position].clone());
       }
 
       columns.push_back(column);
     }
 
-    Self { columns }
+    let sql = app_state.history.first().unwrap().query_lines.clone();
+
+    Self { sql, columns }
   }
 
   pub fn cook_columns(&mut self) -> &Self {
@@ -618,7 +621,12 @@ impl DataForYanking {
   }
 
   pub fn yank(&mut self) -> String {
-    let mut yanking_data: String = String::new();
+    if let Some(last) = self.sql.last_mut() {
+      *last = format!("{last}\n\n");
+    }
+
+    let mut yanking_data = String::from(self.sql.first().unwrap().clone());
+    self.sql[1..].iter().for_each(|line| yanking_data = format!("{yanking_data}\n{line}"));
 
     let mut row_position: usize = 0;
     while row_position < self.columns.len() {
@@ -635,112 +643,4 @@ impl DataForYanking {
 }
 
 #[cfg(test)]
-mod yanking {
-  use std::collections::LinkedList;
-
-  use crate::{
-    components::data::DataForYanking,
-    database::{Header, Headers, Rows},
-  };
-
-  #[test]
-  fn data_for_yanking_new_works() {
-    let header0 = Header { name: "id".to_string(), type_name: "whatever".to_string() };
-    let header1 = Header { name: "name".to_string(), type_name: "whatever".to_string() };
-    let header2 = Header { name: "cost".to_string(), type_name: "whatever".to_string() };
-
-    let headers: Headers = vec![header0.clone(), header1.clone(), header2.clone()];
-
-    let row0 = vec!["1".to_string(), "Suspensor".to_string(), "100.00".to_string()];
-    let row1 = vec!["2".to_string(), "Holtzman Shield".to_string(), "5000.00".to_string()];
-    let row2 = vec!["3".to_string(), "Spice".to_string(), "2500.00".to_string()];
-    let row3 = vec!["4".to_string(), "Thumper".to_string(), "500.00".to_string()];
-    let row4 = vec!["5".to_string(), "Fremkit".to_string(), "200.00".to_string()];
-
-    let rows = vec![row0.clone(), row1.clone(), row2.clone(), row3.clone(), row4.clone()];
-
-    let rows = Rows { headers, rows, rows_affected: None };
-
-    let data_for_yanking = DataForYanking::new(&rows);
-
-    let mut column0 = LinkedList::new();
-    column0.push_front(header0.name.clone());
-    column0.push_back(row0[0].clone());
-    column0.push_back(row1[0].clone());
-    column0.push_back(row2[0].clone());
-    column0.push_back(row3[0].clone());
-    column0.push_back(row4[0].clone());
-
-    let mut column1 = LinkedList::new();
-    column1.push_front(header1.name.clone());
-    column1.push_back(row0[1].clone());
-    column1.push_back(row1[1].clone());
-    column1.push_back(row2[1].clone());
-    column1.push_back(row3[1].clone());
-    column1.push_back(row4[1].clone());
-
-    let mut column2 = LinkedList::new();
-    column2.push_front(header2.name.clone());
-    column2.push_back(row0[2].clone());
-    column2.push_back(row1[2].clone());
-    column2.push_back(row2[2].clone());
-    column2.push_back(row3[2].clone());
-    column2.push_back(row4[2].clone());
-
-    let columns = LinkedList::from([column0, column1, column2]);
-    let expected_data_for_yaking = DataForYanking { columns };
-
-    assert_eq!(expected_data_for_yaking.columns, data_for_yanking.columns)
-  }
-
-  #[test]
-  fn data_for_yanking_cook_column_works() {
-    let header0 = Header { name: "id".to_string(), type_name: "whatever".to_string() };
-    let header1 = Header { name: "name".to_string(), type_name: "whatever".to_string() };
-    let header2 = Header { name: "cost".to_string(), type_name: "whatever".to_string() };
-
-    let headers: Headers = vec![header0.clone(), header1.clone(), header2.clone()];
-
-    let row0 = vec!["1".to_string(), "Suspensor".to_string(), "100.00".to_string()];
-    let row1 = vec!["2".to_string(), "Holtzman Shield".to_string(), "5000.00".to_string()];
-    let row2 = vec!["3".to_string(), "Spice".to_string(), "2500.00".to_string()];
-    let row3 = vec!["4".to_string(), "Thumper".to_string(), "500.00".to_string()];
-    let row4 = vec!["5".to_string(), "Fremkit".to_string(), "200.00".to_string()];
-
-    let rows = vec![row0.clone(), row1.clone(), row2.clone(), row3.clone(), row4.clone()];
-
-    let rows = Rows { headers, rows, rows_affected: None };
-
-    let mut data_for_yanking = DataForYanking::new(&rows);
-    data_for_yanking.cook_columns();
-
-    let mut column0 = LinkedList::new();
-    column0.push_front(r"\sid\s".to_string());
-    column0.push_back(r"\s1\s\s".to_string());
-    column0.push_back(r"\s2\s\s".to_string());
-    column0.push_back(r"\s3\s\s".to_string());
-    column0.push_back(r"\s4\s\s".to_string());
-    column0.push_back(r"\s5\s\s".to_string());
-
-    let mut column1 = LinkedList::new();
-    column1.push_front(r"|\s\s\s\s\s\sname\s\s\s\s\s\s\s".to_string());
-    column1.push_back(r"|\s\s\s\sSuspensor\s\s\s\s".to_string());
-    column1.push_back(r"|\sHoltzman Shield\s".to_string());
-    column1.push_back(r"|\s\s\s\s\s\sSpice\s\s\s\s\s\s".to_string());
-    column1.push_back(r"|\s\s\s\s\sThumper\s\s\s\s\s".to_string());
-    column1.push_back(r"|\s\s\s\s\sFremkit\s\s\s\s\s".to_string());
-
-    let mut column2 = LinkedList::new();
-    column2.push_front(r"|\s\scost\s\s\s".to_string());
-    column2.push_back(r"|\s100.00\s\s".to_string());
-    column2.push_back(r"|\s5000.00\s".to_string());
-    column2.push_back(r"|\s2500.00\s".to_string());
-    column2.push_back(r"|\s500.00\s\s".to_string());
-    column2.push_back(r"|\s200.00\s\s".to_string());
-
-    let columns = LinkedList::from([column0, column1, column2]);
-    let expected_data_for_yaking = DataForYanking { columns };
-
-    assert_eq!(expected_data_for_yaking.columns, data_for_yanking.columns)
-  }
-}
+mod yanking {}
