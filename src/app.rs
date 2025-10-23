@@ -618,7 +618,7 @@ impl App {
         Focus::Favorites =>
           "[j|↓] down [k|↑] up [y] copy query [I] edit query [D] delete entry [/] search [<esc>] clear search",
         Focus::Data if !self.state.query_task_running =>
-          "[P] export [j|↓] next row [k|↑] prev row [w|e] next col [b] prev col [v] select field [V] select row [y] copy [g] top [G] bottom [0] first col [$] last col",
+          "[Y] yank [P] export [j|↓] next row [k|↑] prev row [w|e] next col [b] prev col [v] select field [V] select row [y] copy [g] top [G] bottom [0] first col [$] last col",
         Focus::PopUp => "[<esc>] cancel",
         _ => "",
       }
