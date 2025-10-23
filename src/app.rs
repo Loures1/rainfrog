@@ -30,7 +30,7 @@ use crate::{
   focus::Focus,
   popups::{
     PopUp, PopUpPayload, confirm_bypass::ConfirmBypass, confirm_export::ConfirmExport, confirm_query::ConfirmQuery,
-    confirm_tx::ConfirmTx, exporting::Exporting, name_favorite::NameFavorite,
+    confirm_tx::ConfirmTx, confirm_yank::ConfirmYank, exporting::Exporting, name_favorite::NameFavorite,
   },
   tui,
   ui::center,
@@ -257,6 +257,13 @@ impl App {
                       self.set_focus(Focus::Data);
                     }
                   },
+                  Some(PopUpPayload::ConfirmYank(confirmed)) => {
+                    if confirmed {
+                      action_tx.send(Action::YankData)?;
+                    } else {
+                      self.set_focus(Focus::Data);
+                    }
+                  },
                   Some(PopUpPayload::Cancel) => {
                     self.last_focused_component();
                   },
@@ -467,6 +474,12 @@ impl App {
             self.set_popup(Box::new(ConfirmExport::new(*row_count)));
           },
           Action::ExportDataFinished => {
+            self.set_focus(Focus::Data);
+          },
+          Action::RequestYankData(row_count) => {
+            self.set_popup(Box::new(ConfirmYank::new(*row_count)));
+          },
+          Action::YankDataFinished => {
             self.set_focus(Focus::Data);
           },
           _ => {},

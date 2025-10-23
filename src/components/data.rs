@@ -277,11 +277,6 @@ impl Component for Data<'_> {
           self.command_tx.clone().unwrap().send(Action::RequestExportData(rows.rows.len() as i64))?;
         }
       },
-      Input { key: Key::Char('Y'), .. } => {
-        if let DataState::HasResults(_) = &self.data_state {
-          self.command_tx.clone().unwrap().send(Action::YankData)?;
-        }
-      },
       Input { key: Key::Right, .. } | Input { key: Key::Char('l'), .. } => {
         self.scroll(ScrollDirection::Right);
       },
@@ -375,6 +370,11 @@ impl Component for Data<'_> {
           self.scrollable.transition_selection_mode(Some(SelectionMode::Copied));
         }
       },
+      Input { key: Key::Char('Y'), .. } => {
+        if let DataState::HasResults(rows) = &self.data_state {
+          self.command_tx.clone().unwrap().send(Action::RequestYankData(rows.rows.len() as i64))?;
+        }
+      },
       Input { key: Key::Esc, .. } => {
         self.scrollable.transition_selection_mode(None);
       },
@@ -410,6 +410,7 @@ impl Component for Data<'_> {
         let data = data_for_yanking.yank();
         stdin.write_all(data.as_bytes())?;
       };
+      self.command_tx.clone().unwrap().send(Action::YankDataFinished)?;
     }
     Ok(None)
   }
