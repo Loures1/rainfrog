@@ -629,14 +629,16 @@ impl DataForYanking {
     let mut yanking_data = String::from(self.sql.first().unwrap().clone());
     self.sql[1..].iter().for_each(|line| yanking_data = format!("{yanking_data}\n{line}"));
 
-    let mut row_position: usize = 0;
-    while row_position < self.columns.len() {
+    while !self.columns.is_empty() {
+      let reference = self.columns.front().unwrap();
+      if reference.is_empty() {
+        break;
+      }
       for column in &mut self.columns {
         let cell = column.pop_front().unwrap();
         yanking_data = format!("{yanking_data}{cell}");
       }
       yanking_data = format!("{yanking_data}\n");
-      row_position += 1;
     }
 
     yanking_data
