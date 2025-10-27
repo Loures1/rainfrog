@@ -402,14 +402,7 @@ impl Component for Data<'_> {
       let DataState::HasResults(rows) = &self.data_state else {
         return Ok(None);
       };
-      let mut wl_copy = Command::new("wl-copy").stdin(Stdio::piped()).spawn()?;
-
-      if let Some(mut stdin) = wl_copy.stdin.take() {
-        let mut data_for_yanking = DataForYanking::new(rows, app_state);
-        data_for_yanking.cook_columns();
-        let data = data_for_yanking.yank();
-        stdin.write_all(data.as_bytes())?;
-      };
+      yank_to_clipboard(rows, app_state)?;
       self.command_tx.clone().unwrap().send(Action::YankDataFinished)?;
     }
     Ok(None)
@@ -553,7 +546,32 @@ impl Component for Data<'_> {
   }
 }
 
-struct DataForYanking {
+#[cfg(target_os = "linux")]
+const SYSTEM_WINDOW_PROTOCOL: &str = env!("XDG_SESSION_TYPE");
+
+#[cfg(target_os = "windows")]
+const SYSTEM_WINDOW_PROTOCOL: &str = "windows";
+
+#[cfg(target_os = "ios")]
+const SYSTEM_WINDOW_PROTOCOL: &str = "ios";
+
+fn yank_to_clipboard(rows: &Rows, app_state: &AppState) -> Result<()> {
+  let (mut pipe, _) = clipboard(SYSTEM_WINDOW_PROTOCOL)?;
+  let data_for_yank = DataForYank::new(rows, app_state).cook_columns().yank();
+  pipe.write_all(data_for_yank.as_bytes())?;
+  Ok(())
+}
+
+fn clipboard(system_window_protocol: &str) -> Result<(std::process::ChildStdin, std::process::Child)> {
+  let mut child = match system_window_protocol {
+    "wayland" => Command::new("wl-copy").stdin(Stdio::piped()).spawn(),
+    _ => Err(io::Error::new(io::ErrorKind::Unsupported, format!("Unsupported for {system_window_protocol}"))),
+  }?;
+  let pipe = child.stdin.take().unwrap();
+  Ok((pipe, child))
+}
+
+struct DataForYank {
   sql: Vec<String>,
   columns: LinkedList<LinkedList<String>>,
 }
