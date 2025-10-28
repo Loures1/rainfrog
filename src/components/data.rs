@@ -648,4 +648,105 @@ impl DataForYank {
 }
 
 #[cfg(test)]
-mod yanking {}
+mod yank {
+
+  use crate::components::data::{DataForYank, clipboard};
+  use std::collections::VecDeque;
+
+  #[test]
+  fn clipboard_supported_for_wayland() {
+    const SYSTEM_WINDOW_PROTOCOL: &str = "wayland";
+
+    let result = clipboard(SYSTEM_WINDOW_PROTOCOL).is_ok();
+    assert!(result)
+  }
+
+  #[test]
+  #[should_panic(expected = "Unsupported for whatever")]
+  fn clipboard_error_unsupported() {
+    const SYSTEM_WINDOW_PROTOCOL: &str = "whatever";
+    let result = clipboard(SYSTEM_WINDOW_PROTOCOL).unwrap();
+  }
+
+  #[test]
+  fn to_columns_is_works() {
+    let headers = vec!["id".to_string(), "name".to_string(), "age".to_string()];
+    let rows = vec![
+      vec!["id1".to_string(), "name1".to_string(), "age1".to_string()],
+      vec!["id2".to_string(), "name2".to_string(), "age2".to_string()],
+      vec!["id3".to_string(), "name3".to_string(), "age3".to_string()],
+    ];
+
+    let result = DataForYank::to_columns(&headers, &rows);
+
+    let expected = vec![
+      VecDeque::from(["id".to_string(), "id1".to_string(), "id2".to_string(), "id3".to_string()]),
+      VecDeque::from(["name".to_string(), "name1".to_string(), "name2".to_string(), "name3".to_string()]),
+      VecDeque::from(["age".to_string(), "age1".to_string(), "age2".to_string(), "age3".to_string()]),
+    ];
+
+    assert_eq!(expected, result)
+  }
+
+  #[test]
+  fn yank_is_works() {
+    let headers = vec!["id".to_string(), "name".to_string(), "age".to_string()];
+    let rows = vec![
+      vec!["id1".to_string(), "name1".to_string(), "age1".to_string()],
+      vec!["id2".to_string(), "name2".to_string(), "age2".to_string()],
+      vec!["id3".to_string(), "name3".to_string(), "age3".to_string()],
+    ];
+
+    let mut data_to_yank = DataForYank {
+      sql: vec!["select".to_string(), "*".to_string(), "from".to_string(), "something".to_string()],
+      table: DataForYank::to_columns(&headers, &rows),
+    };
+
+    let result = data_to_yank.yank();
+
+    let expected = "\
+select
+*
+from
+something
+
+ id  | name  | age  
+-----+-------+------
+ id1 | name1 | age1 
+ id2 | name2 | age2 
+ id3 | name3 | age3 
+";
+
+    assert_eq!(expected, result)
+  }
+
+  #[test]
+  fn fomart_column_is_work() {
+    let table = vec![VecDeque::from([
+      "states".to_string(),
+      "Sao Paulo".to_string(),
+      "Minas Gerais".to_string(),
+      "Amazonas".to_string(),
+      "Rio Grande do Sul".to_string(),
+      "Mato Grosso".to_string(),
+    ])];
+
+    let mut data_to_yank = DataForYank { sql: vec!["".to_string()], table };
+
+    data_to_yank.table.iter_mut().enumerate().for_each(|(index, col)| DataForYank::format_column(col, index));
+
+    let result = data_to_yank.table.first().unwrap();
+
+    let expected = VecDeque::from([
+      format!(" states{}", " ".repeat(12)),
+      "-".to_string().repeat(19),
+      format!(" Sao Paulo{}", " ".repeat(9)),
+      format!(" Minas Gerais{}", " ".repeat(6)),
+      format!(" Amazonas{}", " ".repeat(10)),
+      " Rio Grande do Sul ".to_string(),
+      format!(" Mato Grosso{}", " ".repeat(7)),
+    ]);
+
+    assert_eq!(result, &expected)
+  }
+}
