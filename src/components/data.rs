@@ -579,7 +579,6 @@ struct DataForYank {
 impl DataForYank {
   fn new(rows: &Rows, app_state: &AppState) -> Self {
     let sql = app_state.history.first().expect("expected the last SQL query in history").query_lines.clone();
-
     let headers: &Vec<String> = &rows.headers.iter().map(|h| h.name.clone()).collect();
     let rows = &rows.rows;
 
