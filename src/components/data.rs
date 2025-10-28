@@ -1,5 +1,5 @@
-use std::collections::LinkedList;
-use std::io::Write;
+use std::collections::VecDeque;
+use std::io::{self, Write};
 use std::process::{Command, Stdio};
 
 use color_eyre::eyre::{self, Result};
@@ -557,7 +557,7 @@ const SYSTEM_WINDOW_PROTOCOL: &str = "ios";
 
 fn yank_to_clipboard(rows: &Rows, app_state: &AppState) -> Result<()> {
   let (mut pipe, _) = clipboard(SYSTEM_WINDOW_PROTOCOL)?;
-  let data_for_yank = DataForYank::new(rows, app_state).cook_columns().yank();
+  let data_for_yank = DataForYank::new(rows, app_state).yank();
   pipe.write_all(data_for_yank.as_bytes())?;
   Ok(())
 }
@@ -573,93 +573,77 @@ fn clipboard(system_window_protocol: &str) -> Result<(std::process::ChildStdin, 
 
 struct DataForYank {
   sql: Vec<String>,
-  columns: LinkedList<LinkedList<String>>,
+  table: Vec<VecDeque<String>>,
 }
 
-impl DataForYanking {
-  pub fn new(rows: &Rows, app_state: &AppState) -> Self {
-    let mut columns: LinkedList<LinkedList<String>> = LinkedList::new();
+impl DataForYank {
+  fn new(rows: &Rows, app_state: &AppState) -> Self {
+    let sql = app_state.history.first().expect("expected the last SQL query in history").query_lines.clone();
 
-    for (column_position, header) in rows.headers.iter().enumerate() {
-      let mut column: LinkedList<String> = LinkedList::from([header.name.clone()]);
+    let headers: &Vec<String> = &rows.headers.iter().map(|h| h.name.clone()).collect();
+    let rows = &rows.rows;
 
-      for row in &rows.rows {
-        column.push_back(row[column_position].clone());
-      }
+    let table = Self::to_columns(headers, rows);
 
-      columns.push_back(column);
-    }
-
-    let sql = app_state.history.first().unwrap().query_lines.clone();
-
-    Self { sql, columns }
+    Self { sql, table }
   }
 
-  pub fn cook_columns(&mut self) -> &Self {
-    for (position, column) in &mut self.columns.iter_mut().enumerate() {
-      let mut space_for_each_cell: usize = 1;
+  fn yank(&mut self) -> String {
+    self.table.iter_mut().enumerate().for_each(|(index, col)| Self::format_column(col, index));
 
-      let raw_column = &column;
+    let mut buff = String::new();
 
-      raw_column.iter().for_each(|cell| {
-        if space_for_each_cell < cell.len() + 1 {
-          space_for_each_cell = cell.len() + 1;
-        }
-      });
-
-      let cook_column = column;
-
-      cook_column.iter_mut().for_each(|cell| {
-        let space: usize = space_for_each_cell - cell.len();
-        let prev_space = match position {
-          0 => " ".to_string(),
-          _ => {
-            let pau = "|".to_string();
-            let spaces = " ".to_string();
-            format!("{pau}{spaces}")
-          },
-        };
-        let next_space = " ".to_string().repeat(space);
-
-        *cell = format!("{prev_space}{cell}{next_space}");
-      });
-
-      let point = "-".to_string().repeat(space_for_each_cell + 1);
-
-      let div = match position {
-        0 => format!("{point}"),
-        _ => format!("+{point}"),
-      };
-
-      let header = cook_column.pop_front().unwrap();
-      cook_column.push_front(div);
-      cook_column.push_front(header);
+    for statement in &self.sql {
+      buff.push_str(statement);
+      buff.push('\n');
     }
 
-    self
-  }
+    buff.push('\n');
 
-  pub fn yank(&mut self) -> String {
-    if let Some(last) = self.sql.last_mut() {
-      *last = format!("{last}\n\n");
-    }
-
-    let mut yanking_data = String::from(self.sql.first().unwrap().clone());
-    self.sql[1..].iter().for_each(|line| yanking_data = format!("{yanking_data}\n{line}"));
-
-    while !self.columns.is_empty() {
-      let reference = self.columns.front().unwrap();
-      if reference.is_empty() {
+    while let Some(col) = self.table.first() {
+      if col.is_empty() {
         break;
       }
-      for column in &mut self.columns {
-        let cell = column.pop_front().unwrap();
-        yanking_data = format!("{yanking_data}{cell}");
+
+      for col in &mut self.table {
+        if let Some(cell) = col.pop_front() {
+          buff.push_str(&cell);
+        }
       }
-      yanking_data = format!("{yanking_data}\n");
+      buff.push('\n');
     }
 
-    yanking_data
+    buff
+  }
+
+  fn format_column(col: &mut VecDeque<String>, index: usize) {
+    let width = col.iter().map(|s| s.len()).max().unwrap_or(1) + 1;
+
+    let format_cell = |s: &str| {
+      let prefix = if index == 0 { " " } else { "| " };
+      let padding = " ".repeat(width.saturating_sub(s.len()));
+      format!("{prefix}{s}{padding}")
+    };
+
+    col.iter_mut().for_each(|s| *s = format_cell(s));
+
+    if let Some(header) = col.pop_front() {
+      let div = if index == 0 { "-".repeat(width + 1) } else { format!("+{}", "-".repeat(width + 1)) };
+      col.push_front(div);
+      col.push_front(header);
+    }
+  }
+
+  fn to_columns(headers: &[String], rows: &[Vec<String>]) -> Vec<VecDeque<String>> {
+    headers
+      .iter()
+      .enumerate()
+      .map(|(i, h)| {
+        let mut col: VecDeque<String> = VecDeque::from([h.clone()]);
+        rows.iter().filter_map(|row| row.get(i)).cloned().for_each(|v| col.push_back(v));
+        col
+      })
+      .collect()
   }
 }
 
