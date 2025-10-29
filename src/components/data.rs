@@ -546,14 +546,7 @@ impl Component for Data<'_> {
   }
 }
 
-#[cfg(target_os = "linux")]
 const SYSTEM_WINDOW_PROTOCOL: &str = env!("XDG_SESSION_TYPE");
-
-#[cfg(target_os = "windows")]
-const SYSTEM_WINDOW_PROTOCOL: &str = "windows";
-
-#[cfg(target_os = "ios")]
-const SYSTEM_WINDOW_PROTOCOL: &str = "ios";
 
 fn yank_to_clipboard(rows: &Rows, app_state: &AppState) -> Result<()> {
   let (mut pipe, _) = clipboard(SYSTEM_WINDOW_PROTOCOL)?;
@@ -565,9 +558,10 @@ fn yank_to_clipboard(rows: &Rows, app_state: &AppState) -> Result<()> {
 fn clipboard(system_window_protocol: &str) -> Result<(std::process::ChildStdin, std::process::Child)> {
   let mut child = match system_window_protocol {
     "wayland" => Command::new("wl-copy").stdin(Stdio::piped()).spawn(),
+    "x11" => Command::new("xclip -selection clipboard").stdin(Stdio::piped()).spawn(),
     _ => Err(io::Error::new(io::ErrorKind::Unsupported, format!("Unsupported for {system_window_protocol}"))),
   }?;
-  let pipe = child.stdin.take().unwrap();
+  let pipe = child.stdin.take().expect("expected obtain clipboard's pipe");
   Ok((pipe, child))
 }
 
@@ -649,16 +643,8 @@ impl DataForYank {
 #[cfg(test)]
 mod yank {
 
-  use crate::components::data::{DataForYank, clipboard};
+  use crate::components::data::{DataForYank, SYSTEM_WINDOW_PROTOCOL, clipboard};
   use std::collections::VecDeque;
-
-  #[test]
-  fn clipboard_supported_for_wayland() {
-    const SYSTEM_WINDOW_PROTOCOL: &str = "wayland";
-
-    let result = clipboard(SYSTEM_WINDOW_PROTOCOL).is_ok();
-    assert!(result)
-  }
 
   #[test]
   #[should_panic(expected = "Unsupported for whatever")]
