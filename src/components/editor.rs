@@ -1,6 +1,9 @@
-use color_eyre::eyre::Result;
+use color_eyre::{eyre::Result, owo_colors::OwoColorize};
 use crossterm::event::{KeyEvent, MouseEvent, MouseEventKind};
-use ratatui::prelude::*;
+use ratatui::{
+  prelude::*,
+  widgets::{Block, Borders, Clear, Paragraph},
+};
 use tokio::sync::mpsc::UnboundedSender;
 use tui_textarea::{Input, Key, TextArea};
 
@@ -24,6 +27,7 @@ pub struct Editor<'a> {
   command_tx: Option<UnboundedSender<Action>>,
   config: Config,
   textarea: TextArea<'a>,
+  auto_complete: AutoComplete,
   vim_state: Vim,
   cursor_style: Style,
   last_query_duration: Option<chrono::Duration>,
@@ -37,6 +41,7 @@ impl Editor<'_> {
       command_tx: None,
       config: Config::default(),
       textarea,
+      auto_complete: AutoComplete::default(),
       vim_state: Vim::new(Mode::Normal),
       cursor_style: Mode::Normal.cursor_style(),
       last_query_duration: None,
@@ -82,6 +87,11 @@ impl Editor<'_> {
       },
       _ => {
         let new_vim_state = self.vim_state.clone();
+
+        if let Mode::Insert = self.vim_state.mode {
+          self.auto_complete.active =
+            input.key != Key::Backspace && input.key != Key::Char(' ') && input.key != Key::Esc;
+        }
         self.vim_state = match new_vim_state.transition(input, &mut self.textarea) {
           Transition::Mode(mode) if new_vim_state.mode != mode => {
             self.cursor_style = mode.cursor_style();
@@ -93,6 +103,8 @@ impl Editor<'_> {
         self.vim_state.register_action_handler(self.command_tx.clone())?;
       },
     };
+
+    if let Mode::Insert = self.vim_state.mode {};
     Ok(())
   }
 }
@@ -212,6 +224,48 @@ impl Component for Editor<'_> {
     self.textarea.set_tab_length(2);
     self.textarea.set_search_style(Style::default().fg(Color::Magenta).bold());
     f.render_widget(&self.textarea, area);
+
+    if self.auto_complete.test1 {
+      let mut num = 0;
+      while num < 22 {
+        self.textarea.delete_char();
+        num += 1;
+      }
+      self.auto_complete.test1 = false;
+    }
+
+    if !self.auto_complete.test {
+      self.textarea.insert_str("a".repeat(100));
+      self.textarea.insert_str(" ".repeat(21));
+      self.textarea.insert_str("#");
+      self.auto_complete.test = true;
+      self.auto_complete.test1 = true;
+    }
+
+    self.auto_complete.active = false;
+    if self.auto_complete.active {
+      let (x, y) = (area.x + 3, area.y + 2);
+      let limit = area.width.saturating_sub(3) as usize;
+      let (row, col) = self.textarea.cursor();
+      let area = if col + 6 < limit {
+        Rect::new(x + col as u16, y + row as u16, 6, 6)
+      } else {
+        Rect::new(area.width.saturating_add(area.x).saturating_sub(7), y + row as u16, 6, 6)
+      };
+      let p1 = Block::new().borders(Borders::all()).title("ola");
+
+      f.render_widget(Clear, area);
+      f.render_widget(p1, area);
+    }
+
     Ok(())
   }
+}
+
+#[derive(Default)]
+struct AutoComplete {
+  active: bool,
+  test: bool,
+  test1: bool,
+  test2: bool,
 }
