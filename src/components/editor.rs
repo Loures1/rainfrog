@@ -223,24 +223,42 @@ impl Component for Editor<'_> {
     self.textarea.set_hard_tab_indent(false);
     self.textarea.set_tab_length(2);
     self.textarea.set_search_style(Style::default().fg(Color::Magenta).bold());
+
+    let limit = area.width.saturating_sub(2) as f32 * 0.9;
+    let rest = area.width.saturating_sub(2) as f32 * 0.1;
+
+    let (row, col) = self.textarea.cursor();
+
+    let mut frame_mode = FrameMode::Normal;
+
+    if col >= limit as usize {
+      frame_mode = FrameMode::Limit;
+    }
+
+    match frame_mode {
+      FrameMode::Normal => (),
+      FrameMode::Limit => {
+        if col.saturating_sub(self.auto_complete.cursor) == 1 {
+          self.textarea.insert_str(" ".repeat(rest as usize));
+          self.auto_complete.limit = Limit::Delete;
+        } else {
+          match self.auto_complete.limit {
+            Limit::Delete => {
+              let mut num = 0;
+              while num < rest as usize {
+                self.textarea.delete_char();
+                num += 1;
+              }
+              self.auto_complete.limit = Limit::Stop;
+            },
+            Limit::Stop => (),
+          }
+        }
+      },
+    };
+
     f.render_widget(&self.textarea, area);
-
-    if self.auto_complete.test1 {
-      let mut num = 0;
-      while num < 22 {
-        self.textarea.delete_char();
-        num += 1;
-      }
-      self.auto_complete.test1 = false;
-    }
-
-    if !self.auto_complete.test {
-      self.textarea.insert_str("a".repeat(100));
-      self.textarea.insert_str(" ".repeat(21));
-      self.textarea.insert_str("#");
-      self.auto_complete.test = true;
-      self.auto_complete.test1 = true;
-    }
+    self.auto_complete.cursor = col;
 
     self.auto_complete.active = false;
     if self.auto_complete.active {
@@ -262,10 +280,23 @@ impl Component for Editor<'_> {
   }
 }
 
+enum FrameMode {
+  Normal,
+  Limit,
+}
+
+#[derive(Default)]
+enum Limit {
+  #[default]
+  Stop,
+  Delete,
+}
+
 #[derive(Default)]
 struct AutoComplete {
+  limit: Limit,
+  cursor: usize,
   active: bool,
   test: bool,
   test1: bool,
-  test2: bool,
 }
